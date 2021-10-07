@@ -1,7 +1,10 @@
 import 'package:distingueur/models/persistence.dart';
+import 'package:distingueur/models/persistenceDao.dart';
 import 'package:distingueur/notifier.dart';
 import 'package:distingueur/widgets/item_address.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_database/ui/firebase_animated_list.dart';
 
 class AddressesScreen extends StatefulWidget {
   static final Notifier notifier = Notifier();
@@ -13,16 +16,22 @@ class AddressesScreen extends StatefulWidget {
 }
 
 class _AddressesScreenState extends State<AddressesScreen> {
+  ScrollController _scrollController = ScrollController();
+  final persistenceDao = PersistenceDao();
+
   @override
   void initState() {
     super.initState();
-    AddressesScreen.notifier.addListener(onEvent);
+    print("ici");
+    WidgetsBinding.instance!.addPostFrameCallback((_){
+    setState(() {});
+    });
+    //AddressesScreen.notifier.addListener(onEvent);
   }
 
   void onEvent() {
     // raffraichit la liste à chaque appel
-    if (this.mounted)
-      setState(() {});
+    if (this.mounted) setState(() {});
   }
 
   @override
@@ -38,8 +47,9 @@ class _AddressesScreenState extends State<AddressesScreen> {
           )
         ],
       ),
-      body: FutureBuilder<List<Address>>(
-        future: Database.instance.getAllAddresses(),
+      body: //_getMessageList(),
+      FutureBuilder<DataSnapshot>(
+        future: persistenceDao.getMessageQuery().once(),
         builder: (_, snapshot) {
           if (snapshot.hasError) {
             print('${snapshot.error}');
@@ -65,7 +75,16 @@ class _AddressesScreenState extends State<AddressesScreen> {
           }
           if (!snapshot.hasData)
             return Center(child: CircularProgressIndicator(),);
-          List<Address> addresses = snapshot.data!;
+          List<Address> addresses = [];
+          snapshot.data!.value.forEach((k,v) {
+            addresses.add(
+                Address(
+                    as: v['as'],
+                    id: 10,
+                    rd: v['rd'],
+                    site: v['site'])
+            );
+          });
           if (addresses.isEmpty)
             return Center(
               child: Column(
@@ -112,9 +131,7 @@ class _AddressesScreenState extends State<AddressesScreen> {
 
   void onNewAddress() {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => _NewAddressDialogScreen(),
-      fullscreenDialog: true
-    ));
+        builder: (_) => _NewAddressDialogScreen(), fullscreenDialog: true));
   }
 
   @override
@@ -148,8 +165,7 @@ class AddressesSearch extends SearchDelegate<Address?> {
   }
 
   Widget _buildSearch(String query) {
-    if (query.isEmpty)
-      return SizedBox();
+    if (query.isEmpty) return SizedBox();
 
     return FutureBuilder<List<Address>>(
       future: Database.instance.searchAddresses(query),
@@ -167,7 +183,8 @@ class AddressesSearch extends SearchDelegate<Address?> {
           );
         }
         // on n'affiche rien si la liste est vide ou aucune donnée
-        else return SizedBox();
+        else
+          return SizedBox();
       },
     );
   }
@@ -191,10 +208,9 @@ class _NewAddressDialogScreen extends StatefulWidget {
 }
 
 class _NewAddressDialogScreenState extends State<_NewAddressDialogScreen> {
-  TextEditingController
-    _siteController = TextEditingController(),
-    _asController = TextEditingController(),
-    _rdController = TextEditingController();
+  TextEditingController _siteController = TextEditingController(),
+      _asController = TextEditingController(),
+      _rdController = TextEditingController();
   FocusNode _asNode = FocusNode(), _rdNode = FocusNode();
 
   @override
@@ -204,41 +220,38 @@ class _NewAddressDialogScreenState extends State<_NewAddressDialogScreen> {
         title: Text("Nouvelle entrée"),
       ),
       body: ListView(
-        padding: EdgeInsets.symmetric(
-          horizontal: 16.0,
-          vertical: 8.0
-        ),
+        padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
         children: [
           TextField(
             controller: _siteController,
-            decoration: InputDecoration(
-              hintText: "Nom du site"
-            ),
+            decoration: InputDecoration(hintText: "Nom du site"),
             textCapitalization: TextCapitalization.words,
             textInputAction: TextInputAction.next,
-            onEditingComplete: () => FocusScope.of(context).requestFocus(_asNode),
+            onEditingComplete: () =>
+                FocusScope.of(context).requestFocus(_asNode),
           ),
-          SizedBox(height: 8.0,),
+          SizedBox(
+            height: 8.0,
+          ),
           TextField(
             controller: _asController,
             focusNode: _asNode,
             decoration: InputDecoration(
-              hintText: "AS (Autonomous System)",
-              counterText: ""
-            ),
+                hintText: "AS (Autonomous System)", counterText: ""),
             textInputAction: TextInputAction.next,
             keyboardType: TextInputType.number,
             maxLength: 5,
-            onEditingComplete: () => FocusScope.of(context).requestFocus(_rdNode),
+            onEditingComplete: () =>
+                FocusScope.of(context).requestFocus(_rdNode),
           ),
-          SizedBox(height: 8.0,),
+          SizedBox(
+            height: 8.0,
+          ),
           TextField(
             controller: _rdController,
             focusNode: _rdNode,
             decoration: InputDecoration(
-              hintText: "RD (Route Distinguisher)",
-              counterText: ""
-            ),
+                hintText: "RD (Route Distinguisher)", counterText: ""),
             keyboardType: TextInputType.number,
             maxLength: 4,
             textInputAction: TextInputAction.done,
@@ -253,7 +266,9 @@ class _NewAddressDialogScreenState extends State<_NewAddressDialogScreen> {
   }
 
   void showToast(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message),));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+    ));
   }
 
   void onSaveAddress() async {
@@ -295,9 +310,15 @@ class _NewAddressDialogScreenState extends State<_NewAddressDialogScreen> {
       showToast("Ce RD est déjà utilisé");
       return;
     }
-
+    final persistenceDao = PersistenceDao();
+    persistenceDao.saveMessage({
+      "site": _siteController.text.trim(),
+      "as": _asController.text.trim(),
+      "rd": _rdController.text.trim(),
+    });
+    Navigator.of(context).pushReplacement( MaterialPageRoute(builder: (_) => AddressesScreen()));
     // enregistrement de l'adresse
-    Database.instance.saveAddress(
+    /*Database.instance.saveAddress(
       site: _siteController.text.trim(),
       as: _asController.text.trim(),
       rd: _rdController.text.trim(),
@@ -308,7 +329,7 @@ class _NewAddressDialogScreenState extends State<_NewAddressDialogScreen> {
       Navigator.of(context).pop();
     }).catchError((e) {
       print('$e');
-    });
+    });*/
   }
 
   @override
