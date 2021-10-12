@@ -4,7 +4,6 @@ import 'package:distingueur/notifier.dart';
 import 'package:distingueur/widgets/item_address.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_database/ui/firebase_animated_list.dart';
 
 class AddressesScreen extends StatefulWidget {
   static final Notifier notifier = Notifier();
@@ -22,7 +21,6 @@ class _AddressesScreenState extends State<AddressesScreen> {
   @override
   void initState() {
     super.initState();
-    print("ici");
     WidgetsBinding.instance!.addPostFrameCallback((_){
     setState(() {});
     });
@@ -166,12 +164,25 @@ class AddressesSearch extends SearchDelegate<Address?> {
 
   Widget _buildSearch(String query) {
     if (query.isEmpty) return SizedBox();
-
-    return FutureBuilder<List<Address>>(
-      future: Database.instance.searchAddresses(query),
+    final persistenceDao = PersistenceDao();
+    return FutureBuilder<DataSnapshot>(
+      future: persistenceDao.searchMessageQuery(query)
+          .once(),/*Database.instance.searchAddresses(query),*/
       builder: (_, snapshot) {
-        if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-          List<Address> results = snapshot.data!;
+        if (snapshot.hasData && snapshot.data!.value != null) {
+
+          List<Address> results = [];
+          snapshot.data!.value.forEach((k,v) {
+            results.add(
+                Address(
+                    as: v['as'],
+                    id: 10,
+                    rd: v['rd'],
+                    site: v['site'])
+            );
+          });
+          results = results.where((f) => f.site.toLowerCase().contains(query) || f.as.toLowerCase().contains(query) || f.rd.toLowerCase().contains(query)).toList();
+          print(results);
           return ListView.separated(
             itemBuilder: (_, i) => AddressItem(address: results[i]),
             separatorBuilder: (_, i) => Divider(
